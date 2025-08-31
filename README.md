@@ -1,3 +1,4 @@
+#winforms #impresion-termica #reportviewer-alternativa #csharp #gdi+ #etiquetas #layout-fisico
 # Alternativa-ReportViewer-ImpresionTermica
 Solución técnica para impresión térmica en WinForms sin depender de ReportViewer. Layout físico preciso, impresión directa y lógica desacoplada.
 # Alternativa técnica a ReportViewer para impresión térmica en WinForms: precisión y control
