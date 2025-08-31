@@ -1,0 +1,1155 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Printing;
+
+public class EtiquetaPrinter
+{
+	private readonly string _cliente;
+	private readonly string _producto;
+	private readonly string _codigoCompra;
+	private readonly string _cantidad;
+	private readonly string _direccion;
+
+	public EtiquetaPrinter(string cliente, string producto, string codigoCompra, string cantidad, string direccion)
+	{
+		_cliente = cliente;
+		_producto = producto;
+		_codigoCompra = codigoCompra;
+		_cantidad = cantidad;
+		_direccion = direccion;
+	}
+
+	// Layout físico centralizado
+	private float PaddingSuperior => mm(3);
+	private float PaddingLateral => mm(3);
+	private float EspacioEntreBloques => mm(6);
+	private float EspacioEntreLineasProducto => mm(5);
+	private Font FuenteEtiqueta => new Font("Arial", 11);
+
+	public void Imprimir()
+	{
+		PrintDocument pd = new PrintDocument();
+		pd.DefaultPageSettings.PaperSize = new PaperSize("Etiqueta 60x40", 228, 152); // 60mm x 40mm
+		pd.DefaultPageSettings.Landscape = false;
+		pd.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
+
+		pd.PrintPage += (sender, e) =>
+		{
+			Graphics g = e.Graphics;
+			float anchoEtiqueta = e.PageBounds.Width;
+			float y = PaddingSuperior;
+
+			ImprimirElemento(g, _cliente, FuenteEtiqueta, y, "centro", anchoEtiqueta);
+			y += EspacioEntreBloques;
+
+			var lineasProducto = PartirEnLineasForzado(_producto, 25);
+			foreach (var linea in lineasProducto)
+			{
+				ImprimirElemento(g, linea, FuenteEtiqueta, y, "centro", anchoEtiqueta);
+				y += EspacioEntreLineasProducto;
+			}
+			y -= EspacioEntreLineasProducto; // corregimos el último salto
+			y += EspacioEntreBloques;
+			ImprimirElemento(g, _codigoCompra, FuenteEtiqueta, y, "centro", anchoEtiqueta);
+
+			y += EspacioEntreBloques;
+			ImprimirElemento(g, _cantidad, FuenteEtiqueta, y, "centro", anchoEtiqueta);
+
+			y += EspacioEntreBloques;
+			ImprimirElemento(g, _direccion, FuenteEtiqueta, y, "centro", anchoEtiqueta);
+		};
+
+		pd.Print();
+	}
+
+	public Bitmap GenerarVistaPrevia(int dpi = 300)
+	{
+		int anchoPx = (int)(60f / 25.4f * dpi); // 60mm → px
+		int altoPx = (int)(40f / 25.4f * dpi);  // 40mm → px
+
+		Bitmap bmp = new Bitmap(anchoPx, altoPx);
+		bmp.SetResolution(dpi, dpi);
+
+		// Ajustamos layout físico en píxeles reales
+		float paddingSuperior = mm(3, dpi);
+		float paddingLateral = mm(3, dpi);
+		float espacioEntreBloques = mm(6, dpi);
+		float espacioEntreLineasProducto = mm(5, dpi);
+		Font fuente = new Font("Arial", 11);
+
+		using (Graphics g = Graphics.FromImage(bmp))
+		{
+			g.Clear(Color.White);
+			float anchoEtiqueta = bmp.Width;
+			float y = paddingSuperior;
+
+			ImprimirElementoVistaPrevia(g, _cliente, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			var lineasProducto = PartirEnLineasForzado(_producto, 25);
+			foreach (var linea in lineasProducto)
+			{
+				ImprimirElementoVistaPrevia(g, linea, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+				y += espacioEntreLineasProducto;
+			}
+			y -= espacioEntreLineasProducto;
+			y += espacioEntreBloques;
+
+			ImprimirElementoVistaPrevia(g, _codigoCompra, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			ImprimirElementoVistaPrevia(g, _cantidad, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			ImprimirElementoVistaPrevia(g, _direccion, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+		}
+
+		return bmp;
+	}
+	private void ImprimirElementoVistaPrevia(Graphics g, string texto, Font fuente, float posY, string alineacion, float anchoEtiqueta, float paddingLateral)
+	{
+		SizeF size = g.MeasureString(texto, fuente);
+		float x;
+
+		if (alineacion == "centro")
+		{
+			x = (anchoEtiqueta - size.Width) / 2 - paddingLateral;
+		}
+		else if (alineacion == "izquierda")
+		{
+			x = paddingLateral;
+		}
+		else
+		{
+			x = paddingLateral;
+		}
+
+		g.DrawString(texto, fuente, Brushes.Black, new PointF(x, posY));
+	}
+
+
+	private void ImprimirElemento(Graphics g, string texto, Font fuente, float posY, string alineacion, float anchoEtiqueta)
+	{
+		SizeF size = g.MeasureString(texto, fuente);
+		float x;
+
+		switch (alineacion)
+		{
+			case "centro":
+				x = (anchoEtiqueta - size.Width) / 2 - PaddingLateral;
+				break;
+			case "izquierda":
+				x = PaddingLateral;
+				break;
+			default:
+				x = PaddingLateral;
+				break;
+		}
+
+		g.DrawString(texto, fuente, Brushes.Black, new PointF(x, posY));
+	}
+
+	private List<string> PartirEnLineasForzado(string texto, int corte = 25)
+	{
+		var lineas = new List<string>();
+
+		if (texto.Length <= corte)
+		{
+			lineas.Add(texto);
+		}
+		else
+		{
+			// Cortamos en el punto exacto
+			string primeraParte = texto.Substring(0, corte);
+			string segundaParte = texto.Substring(corte);
+
+			// Si el corte cae en medio de una palabra, agregamos guion
+			if (!char.IsWhiteSpace(texto[corte]) && !char.IsWhiteSpace(texto[corte - 1]))
+			{
+				primeraParte = primeraParte.TrimEnd() + "-";
+			}
+
+			lineas.Add(primeraParte.Trim());
+			lineas.Add(segundaParte.Trim());
+		}
+
+		return lineas;
+	}
+
+
+
+	private float mm(float milimetros)
+	{
+		return milimetros * 3.937f;
+	}
+	private float mm(float milimetros, float dpi)
+	{
+		return milimetros * dpi / 25.4f;
+	}
+}
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace DAL.Entidades
+{
+    public class EtiquetaProducto
+    {
+        public int IdProducto { get; set; }
+        public string NombreProducto { get; set; }
+        public string CodigoCompra { get; set; }
+        public string NombreCliente { get; set; }
+        public int cantidad { get; set; }
+        public string direccion { get; set; }
+
+    }
+}
+
+using System;
+using System.ComponentModel;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using System.Drawing.Printing;
+using DAL.Entidades;
+using System.Collections.Generic;
+
+[Designer(typeof(System.Windows.Forms.Design.ControlDesigner))]
+[DesignerCategory("Code")]
+[DefaultProperty("TotalPaginas")]
+[DefaultEvent("PaginaCambiada")]
+[ToolboxItem(true)]
+[ToolboxBitmap(typeof(TextBox))]
+public partial class PaginationControl : UserControl
+{
+	private TableLayoutPanel tableLayoutPanel;
+	private Button btnInicio;
+	private Button btnAtras;
+	private TextBox txtPagina;
+	private Button btnSiguiente;
+	private Button btnFinal;
+	private Button btnImprimir;
+
+	private int paginaActual = 1;
+	private int totalPaginas = 5;
+
+	public List<EtiquetaProducto> DatosParaImpresion { get; set; }
+
+
+	// Eventos públicos
+	[Category("Action")]
+	[Description("Se produce cuando cambia la página actual")]
+	public event EventHandler<int> PaginaCambiada;
+
+	[Category("Action")]
+	[Description("Se produce cuando se hace clic en el botón Inicio")]
+	public event EventHandler PaginaInicio;
+
+	[Category("Action")]
+	[Description("Se produce cuando se hace clic en el botón Atrás")]
+	public event EventHandler PaginaAtras;
+
+	[Category("Action")]
+	[Description("Se produce cuando se hace clic en el botón Siguiente")]
+	public event EventHandler PaginaSiguiente;
+
+	[Category("Action")]
+	[Description("Se produce cuando se hace clic en el botón Final")]
+	public event EventHandler PaginaFinal;
+
+	[Category("Action")]
+	[Description("Se produce cuando se hace clic en el botón Imprimir")]
+	public event EventHandler ImprimirDocumento;
+
+	public PaginationControl()
+	{
+		InitializeComponent();
+		ActualizarEstadoBotones();
+
+		SetStyle(ControlStyles.ContainerControl, true);
+		SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+		SetStyle(ControlStyles.UserPaint, true);
+		SetStyle(ControlStyles.ResizeRedraw, true);
+		SetStyle(ControlStyles.AllPaintingInWmPaint, true);
+		SetStyle(ControlStyles.DoubleBuffer, true);
+	}
+
+	private void InitializeComponent()
+	{
+		this.tableLayoutPanel = new TableLayoutPanel();
+		this.btnInicio = new Button();
+		this.btnAtras = new Button();
+		this.txtPagina = new TextBox();
+		this.btnSiguiente = new Button();
+		this.btnFinal = new Button();
+		this.btnImprimir = new Button();
+
+		this.SuspendLayout();
+		this.tableLayoutPanel.SuspendLayout();
+
+		// 
+		// PaginationControl
+		// 
+		this.AutoScaleDimensions = new SizeF(6F, 13F);
+		this.AutoScaleMode = AutoScaleMode.Font;
+		this.BackColor = Color.FromArgb(240, 240, 240);
+		this.BorderStyle = BorderStyle.FixedSingle;
+		this.Size = new Size(300, 32);
+		this.MinimumSize = new Size(250, 32);
+		this.MaximumSize = new Size(2000, 32);
+
+		// 
+		// tableLayoutPanel
+		// 
+		this.tableLayoutPanel.ColumnCount = 6;
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32F)); // btnInicio
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32F)); // btnAtras
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); // txtPagina (se expande)
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32F)); // btnSiguiente
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32F)); // btnFinal
+		this.tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32F)); // btnImprimir
+		this.tableLayoutPanel.Dock = DockStyle.Fill;
+		this.tableLayoutPanel.Location = new Point(0, 0);
+		this.tableLayoutPanel.Margin = new Padding(0);
+		this.tableLayoutPanel.Name = "tableLayoutPanel";
+		this.tableLayoutPanel.Padding = new Padding(2);
+		this.tableLayoutPanel.RowCount = 1;
+		this.tableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+		this.tableLayoutPanel.Size = new Size(300, 32);
+		this.tableLayoutPanel.TabIndex = 0;
+
+		// 
+		// btnInicio
+		// 
+		this.btnInicio.BackColor = Color.FromArgb(33, 150, 243);
+		this.btnInicio.Dock = DockStyle.Fill;
+		this.btnInicio.FlatAppearance.BorderColor = Color.FromArgb(25, 118, 210);
+		this.btnInicio.FlatAppearance.BorderSize = 1;
+		this.btnInicio.FlatStyle = FlatStyle.Flat;
+		this.btnInicio.Location = new Point(2, 2);
+		this.btnInicio.Margin = new Padding(0, 0, 1, 0);
+		this.btnInicio.Name = "btnInicio";
+		this.btnInicio.Size = new Size(31, 28);
+		this.btnInicio.TabIndex = 0;
+		this.btnInicio.UseVisualStyleBackColor = false;
+		this.btnInicio.Click += new EventHandler(this.BtnInicio_Click);
+		this.btnInicio.Paint += new PaintEventHandler(this.BtnInicio_Paint);
+
+		// 
+		// btnAtras
+		// 
+		this.btnAtras.BackColor = Color.FromArgb(33, 150, 243);
+		this.btnAtras.Dock = DockStyle.Fill;
+		this.btnAtras.FlatAppearance.BorderColor = Color.FromArgb(25, 118, 210);
+		this.btnAtras.FlatAppearance.BorderSize = 1;
+		this.btnAtras.FlatStyle = FlatStyle.Flat;
+		this.btnAtras.Location = new Point(33, 2);
+		this.btnAtras.Margin = new Padding(0, 0, 1, 0);
+		this.btnAtras.Name = "btnAtras";
+		this.btnAtras.Size = new Size(31, 28);
+		this.btnAtras.TabIndex = 1;
+		this.btnAtras.UseVisualStyleBackColor = false;
+		this.btnAtras.Click += new EventHandler(this.BtnAtras_Click);
+		this.btnAtras.Paint += new PaintEventHandler(this.BtnAtras_Paint);
+
+		// 
+		// txtPagina
+		// 
+		this.txtPagina.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+		this.txtPagina.BackColor = Color.White;
+		this.txtPagina.BorderStyle = BorderStyle.FixedSingle;
+		this.txtPagina.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+		this.txtPagina.Location = new Point(68, 6);
+		this.txtPagina.Margin = new Padding(3, 0, 3, 0);
+		this.txtPagina.Name = "txtPagina";
+		this.txtPagina.ReadOnly = true;
+		this.txtPagina.Size = new Size(122, 20);
+		this.txtPagina.TabIndex = 2;
+		this.txtPagina.Text = "1 de 5";
+		this.txtPagina.TextAlign = HorizontalAlignment.Center;
+
+		// 
+		// btnSiguiente
+		// 
+		this.btnSiguiente.BackColor = Color.FromArgb(33, 150, 243);
+		this.btnSiguiente.Dock = DockStyle.Fill;
+		this.btnSiguiente.FlatAppearance.BorderColor = Color.FromArgb(25, 118, 210);
+		this.btnSiguiente.FlatAppearance.BorderSize = 1;
+		this.btnSiguiente.FlatStyle = FlatStyle.Flat;
+		this.btnSiguiente.Location = new Point(194, 2);
+		this.btnSiguiente.Margin = new Padding(1, 0, 1, 0);
+		this.btnSiguiente.Name = "btnSiguiente";
+		this.btnSiguiente.Size = new Size(30, 28);
+		this.btnSiguiente.TabIndex = 3;
+		this.btnSiguiente.UseVisualStyleBackColor = false;
+		this.btnSiguiente.Click += new EventHandler(this.BtnSiguiente_Click);
+		this.btnSiguiente.Paint += new PaintEventHandler(this.BtnSiguiente_Paint);
+
+		// 
+		// btnFinal
+		// 
+		this.btnFinal.BackColor = Color.FromArgb(33, 150, 243);
+		this.btnFinal.Dock = DockStyle.Fill;
+		this.btnFinal.FlatAppearance.BorderColor = Color.FromArgb(25, 118, 210);
+		this.btnFinal.FlatAppearance.BorderSize = 1;
+		this.btnFinal.FlatStyle = FlatStyle.Flat;
+		this.btnFinal.Location = new Point(225, 2);
+		this.btnFinal.Margin = new Padding(0, 0, 1, 0);
+		this.btnFinal.Name = "btnFinal";
+		this.btnFinal.Size = new Size(31, 28);
+		this.btnFinal.TabIndex = 4;
+		this.btnFinal.UseVisualStyleBackColor = false;
+		this.btnFinal.Click += new EventHandler(this.BtnFinal_Click);
+		this.btnFinal.Paint += new PaintEventHandler(this.BtnFinal_Paint);
+
+		// 
+		// btnImprimir
+		// 
+		this.btnImprimir.BackColor = Color.FromArgb(255, 152, 0);
+		this.btnImprimir.Dock = DockStyle.Fill;
+		this.btnImprimir.FlatAppearance.BorderColor = Color.FromArgb(245, 124, 0);
+		this.btnImprimir.FlatAppearance.BorderSize = 1;
+		this.btnImprimir.FlatStyle = FlatStyle.Flat;
+		this.btnImprimir.Location = new Point(257, 2);
+		this.btnImprimir.Margin = new Padding(1, 0, 0, 0);
+		this.btnImprimir.Name = "btnImprimir";
+		this.btnImprimir.Size = new Size(31, 28);
+		this.btnImprimir.TabIndex = 5;
+		this.btnImprimir.UseVisualStyleBackColor = false;
+		this.btnImprimir.Click += new EventHandler(this.BtnImprimir_Click);
+		this.btnImprimir.Paint += new PaintEventHandler(this.BtnImprimir_Paint);
+
+		// Agregar controles al TableLayoutPanel
+		this.tableLayoutPanel.Controls.Add(this.btnInicio, 0, 0);
+		this.tableLayoutPanel.Controls.Add(this.btnAtras, 1, 0);
+		this.tableLayoutPanel.Controls.Add(this.txtPagina, 2, 0);
+		this.tableLayoutPanel.Controls.Add(this.btnSiguiente, 3, 0);
+		this.tableLayoutPanel.Controls.Add(this.btnFinal, 4, 0);
+		this.tableLayoutPanel.Controls.Add(this.btnImprimir, 5, 0);
+
+		// Agregar TableLayoutPanel al UserControl
+		this.Controls.Add(this.tableLayoutPanel);
+
+		this.Name = "PaginationControl";
+		this.tableLayoutPanel.ResumeLayout(false);
+		this.tableLayoutPanel.PerformLayout();
+		this.ResumeLayout(false);
+	}
+
+	#region Propiedades Públicas con Atributos de Diseñador
+
+	[Category("Behavior")]
+	[Description("Página actual")]
+	[DefaultValue(1)]
+	[Browsable(true)]
+	public int PaginaActual
+	{
+		get { return paginaActual; }
+		set
+		{
+			if (value >= 1 && value <= totalPaginas && value != paginaActual)
+			{
+				int anteriorPagina = paginaActual;
+				paginaActual = value;
+				ActualizarTexto();
+				ActualizarEstadoBotones();
+				PaginaCambiada?.Invoke(this, paginaActual);
+			}
+		}
+	}
+
+	[Category("Behavior")]
+	[Description("Total de páginas disponibles")]
+	[DefaultValue(5)]
+	[Browsable(true)]
+	public int TotalPaginas
+	{
+		get { return totalPaginas; }
+		set
+		{
+			if (value > 0)
+			{
+				totalPaginas = value;
+				if (paginaActual > totalPaginas)
+					paginaActual = totalPaginas;
+				ActualizarTexto();
+				ActualizarEstadoBotones();
+			}
+		}
+	}
+
+	[Category("Appearance")]
+	[Description("Color de fondo del control")]
+	[DefaultValue(typeof(Color), "240, 240, 240")]
+	[Browsable(true)]
+	public override Color BackColor
+	{
+		get { return base.BackColor; }
+		set { base.BackColor = value; }
+	}
+
+	[Category("Layout")]
+	[Description("Establece cómo se ancla el control a los bordes de su contenedor")]
+	[DefaultValue(AnchorStyles.Top | AnchorStyles.Left)]
+	public override AnchorStyles Anchor
+	{
+		get { return base.Anchor; }
+		set { base.Anchor = value; }
+	}
+
+	[Category("Layout")]
+	[Description("Establece qué bordes del control se acoplan al contenedor")]
+	[DefaultValue(DockStyle.None)]
+	public override DockStyle Dock
+	{
+		get { return base.Dock; }
+		set { base.Dock = value; }
+	}
+
+	[Category("Layout")]
+	[Description("Márgenes del control")]
+	public new Padding Margin
+	{
+		get { return base.Margin; }
+		set { base.Margin = value; }
+	}
+
+	[Category("Layout")]
+	[Description("Relleno interno del control")]
+	public new Padding Padding
+	{
+		get { return base.Padding; }
+		set { base.Padding = value; }
+	}
+
+	#endregion
+
+	#region Eventos de Botones
+
+	private void BtnInicio_Click(object sender, EventArgs e)
+	{
+		PaginaActual = 1;
+		PaginaInicio?.Invoke(this, e);
+	}
+
+	private void BtnAtras_Click(object sender, EventArgs e)
+	{
+		if (paginaActual > 1)
+		{
+			PaginaActual = paginaActual - 1;
+			PaginaAtras?.Invoke(this, e);
+		}
+	}
+
+	private void BtnSiguiente_Click(object sender, EventArgs e)
+	{
+		if (paginaActual < totalPaginas)
+		{
+			PaginaActual = paginaActual + 1;
+			PaginaSiguiente?.Invoke(this, e);
+		}
+	}
+
+	private void BtnFinal_Click(object sender, EventArgs e)
+	{
+		PaginaActual = totalPaginas;
+		PaginaFinal?.Invoke(this, e);
+	}
+
+	private void BtnImprimir_Click(object sender, EventArgs e)
+	{
+		MostrarDialogoImpresion();
+		ImprimirDocumento?.Invoke(this, e);
+	}
+
+	#endregion
+
+	#region Dibujo de Iconos
+
+	private void BtnInicio_Paint(object sender, PaintEventArgs e)
+	{
+		Button btn = sender as Button;
+		Graphics g = e.Graphics;
+		g.SmoothingMode = SmoothingMode.AntiAlias;
+
+		Color iconColor = btn.Enabled ? Color.White : Color.Gray;
+		using (Brush brush = new SolidBrush(iconColor))
+		{
+			int centerX = btn.Width / 2;
+			int centerY = btn.Height / 2;
+
+			// Línea vertical izquierda
+			g.FillRectangle(brush, centerX - 10, centerY - 6, 2, 12);
+
+			// Primera flecha
+			Point[] flecha1 = {
+				new Point(centerX - 4, centerY - 5),
+				new Point(centerX - 8, centerY),
+				new Point(centerX - 4, centerY + 5)
+			};
+			g.FillPolygon(brush, flecha1);
+
+			// Segunda flecha
+			Point[] flecha2 = {
+				new Point(centerX + 4, centerY - 5),
+				new Point(centerX, centerY),
+				new Point(centerX + 4, centerY + 5)
+			};
+			g.FillPolygon(brush, flecha2);
+		}
+	}
+
+	private void BtnAtras_Paint(object sender, PaintEventArgs e)
+	{
+		Button btn = sender as Button;
+		Graphics g = e.Graphics;
+		g.SmoothingMode = SmoothingMode.AntiAlias;
+
+		Color iconColor = btn.Enabled ? Color.White : Color.Gray;
+		using (Brush brush = new SolidBrush(iconColor))
+		{
+			int centerX = btn.Width / 2;
+			int centerY = btn.Height / 2;
+
+			Point[] flecha = {
+				new Point(centerX + 4, centerY - 6),
+				new Point(centerX - 4, centerY),
+				new Point(centerX + 4, centerY + 6)
+			};
+			g.FillPolygon(brush, flecha);
+		}
+	}
+
+	private void BtnSiguiente_Paint(object sender, PaintEventArgs e)
+	{
+		Button btn = sender as Button;
+		Graphics g = e.Graphics;
+		g.SmoothingMode = SmoothingMode.AntiAlias;
+
+		Color iconColor = btn.Enabled ? Color.White : Color.Gray;
+		using (Brush brush = new SolidBrush(iconColor))
+		{
+			int centerX = btn.Width / 2;
+			int centerY = btn.Height / 2;
+
+			Point[] flecha = {
+				new Point(centerX - 4, centerY - 6),
+				new Point(centerX + 4, centerY),
+				new Point(centerX - 4, centerY + 6)
+			};
+			g.FillPolygon(brush, flecha);
+		}
+	}
+
+	private void BtnFinal_Paint(object sender, PaintEventArgs e)
+	{
+		Button btn = sender as Button;
+		Graphics g = e.Graphics;
+		g.SmoothingMode = SmoothingMode.AntiAlias;
+
+		Color iconColor = btn.Enabled ? Color.White : Color.Gray;
+		using (Brush brush = new SolidBrush(iconColor))
+		{
+			int centerX = btn.Width / 2;
+			int centerY = btn.Height / 2;
+
+			// Primera flecha
+			Point[] flecha1 = {
+				new Point(centerX - 4, centerY - 5),
+				new Point(centerX, centerY),
+				new Point(centerX - 4, centerY + 5)
+			};
+			g.FillPolygon(brush, flecha1);
+
+			// Segunda flecha  
+			Point[] flecha2 = {
+				new Point(centerX + 4, centerY - 5),
+				new Point(centerX + 8, centerY),
+				new Point(centerX + 4, centerY + 5)
+			};
+			g.FillPolygon(brush, flecha2);
+
+			// Línea vertical derecha
+			g.FillRectangle(brush, centerX + 8, centerY - 6, 2, 12);
+		}
+	}
+
+	private void BtnImprimir_Paint(object sender, PaintEventArgs e)
+	{
+		Button btn = sender as Button;
+		Graphics g = e.Graphics;
+		g.SmoothingMode = SmoothingMode.AntiAlias;
+
+		Color iconColor = btn.Enabled ? Color.White : Color.Gray;
+		using (Brush brush = new SolidBrush(iconColor))
+		{
+			int centerX = btn.Width / 2;
+			int centerY = btn.Height / 2;
+
+			// Parte superior de la impresora
+			g.FillRectangle(brush, centerX - 6, centerY - 3, 12, 6);
+
+			// Papel que sale
+			g.FillRectangle(brush, centerX - 4, centerY - 5, 8, 2);
+
+			// Base de la impresora
+			g.FillRectangle(brush, centerX - 7, centerY + 3, 14, 4);
+
+			// Línea del papel
+			using (Pen pen = new Pen(btn.BackColor, 1))
+			{
+				g.DrawLine(pen, centerX - 5, centerY + 5, centerX + 5, centerY + 5);
+			}
+		}
+	}
+
+	#endregion
+
+	#region Métodos Privados
+
+	private void ActualizarTexto()
+	{
+		if (txtPagina != null)
+			txtPagina.Text = $"{paginaActual} de {totalPaginas}";
+	}
+
+	private void ActualizarEstadoBotones()
+	{
+		if (btnInicio != null)
+		{
+			btnInicio.Enabled = paginaActual > 1;
+			btnAtras.Enabled = paginaActual > 1;
+			btnSiguiente.Enabled = paginaActual < totalPaginas;
+			btnFinal.Enabled = paginaActual < totalPaginas;
+
+			// Cambiar colores según estado
+			btnInicio.BackColor = btnInicio.Enabled ?
+				Color.FromArgb(33, 150, 243) : Color.FromArgb(200, 200, 200);
+			btnAtras.BackColor = btnAtras.Enabled ?
+				Color.FromArgb(33, 150, 243) : Color.FromArgb(200, 200, 200);
+			btnSiguiente.BackColor = btnSiguiente.Enabled ?
+				Color.FromArgb(33, 150, 243) : Color.FromArgb(200, 200, 200);
+			btnFinal.BackColor = btnFinal.Enabled ?
+				Color.FromArgb(33, 150, 243) : Color.FromArgb(200, 200, 200);
+
+			// Invalidar para redibujar iconos
+			btnInicio.Invalidate();
+			btnAtras.Invalidate();
+			btnSiguiente.Invalidate();
+			btnFinal.Invalidate();
+		}
+	}
+
+	#endregion
+	#region Seleccion e Impresion
+	
+
+
+	private void MostrarDialogoImpresion()
+	{
+		if (DatosParaImpresion == null || DatosParaImpresion.Count == 0)
+		{
+			MessageBox.Show("No hay datos para imprimir.", "Información",
+				MessageBoxButtons.OK, MessageBoxIcon.Information);
+			return;
+		}
+
+		try
+		{
+			// 1. Mostrar PrintDialog primero
+			PrintDialog printDialog = new PrintDialog();
+			printDialog.AllowSomePages = true;
+			printDialog.AllowCurrentPage = true;
+			printDialog.AllowSelection = false;
+			printDialog.PrinterSettings.MinimumPage = 1;
+			printDialog.PrinterSettings.MaximumPage = DatosParaImpresion.Count;
+			printDialog.PrinterSettings.FromPage = this.PaginaActual;
+			printDialog.PrinterSettings.ToPage = this.PaginaActual;
+
+			if (printDialog.ShowDialog() == DialogResult.OK)
+			{
+				// 2. Crear PrintDocument según selección
+				// 3. Imprimir según selección
+				CrearYEjecutarPrintDocument(printDialog.PrinterSettings);
+			}
+		}
+		catch (Exception ex)
+		{
+			MessageBox.Show($"Error al mostrar diálogo de impresión: {ex.Message}",
+				"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+		}
+	}
+
+	private void CrearYEjecutarPrintDocument(PrinterSettings settings)
+	{
+		try
+		{
+			// 2. Crear PrintDocument
+			PrintDocument pd = new PrintDocument();
+			pd.DefaultPageSettings.PaperSize = new PaperSize("Etiqueta 60x40", 228, 152);
+			pd.DefaultPageSettings.Landscape = false;
+			pd.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
+
+			// Determinar qué páginas imprimir según la selección del usuario
+			int paginaInicio, paginaFin;
+			DeterminarRangoImpresion(settings, out paginaInicio, out paginaFin);
+
+			// Variable para controlar la página actual durante la impresión
+			int paginaActualImpresion = paginaInicio - 1; // Convertir a índice base 0
+
+			pd.PrintPage += (sender, e) =>
+			{
+				if (paginaActualImpresion < DatosParaImpresion.Count &&
+					paginaActualImpresion <= paginaFin - 1)
+				{
+					// Obtener los datos de la etiqueta actual
+					var etiqueta = DatosParaImpresion[paginaActualImpresion];
+
+					// Crear el printer para esta etiqueta
+					var printer = new EtiquetaPrinter(
+						etiqueta.NombreCliente,
+						etiqueta.NombreProducto,
+						etiqueta.CodigoCompra,
+						$"{etiqueta.cantidad} unidades",
+						etiqueta.direccion
+					);
+
+					// Dibujar la etiqueta usando la lógica del EtiquetaPrinter
+					DibujarEtiquetaEnPrintDocument(printer, e.Graphics, e.PageBounds.Width);
+
+					// Avanzar a la siguiente página
+					paginaActualImpresion++;
+
+					// Verificar si hay más páginas por imprimir
+					e.HasMorePages = paginaActualImpresion < DatosParaImpresion.Count &&
+									 paginaActualImpresion <= paginaFin - 1;
+				}
+			};
+
+			// 3. Imprimir según selección
+			pd.Print();
+
+			// Mostrar mensaje de confirmación
+			MessageBox.Show($"Impresión enviada correctamente.\nPáginas: {paginaInicio} - {paginaFin}",
+				"Impresión", MessageBoxButtons.OK, MessageBoxIcon.Information);
+		}
+		catch (Exception ex)
+		{
+			MessageBox.Show($"Error durante la impresión: {ex.Message}",
+				"Error de Impresión", MessageBoxButtons.OK, MessageBoxIcon.Error);
+		}
+	}
+
+	private void DeterminarRangoImpresion(PrinterSettings settings, out int paginaInicio, out int paginaFin)
+	{
+		switch (settings.PrintRange)
+		{
+			case PrintRange.AllPages:
+				paginaInicio = 1;
+				paginaFin = DatosParaImpresion.Count;
+				break;
+
+			case PrintRange.SomePages:
+				paginaInicio = Math.Max(1, Math.Min(settings.FromPage, DatosParaImpresion.Count));
+				paginaFin = Math.Max(paginaInicio, Math.Min(settings.ToPage, DatosParaImpresion.Count));
+				break;
+
+			case PrintRange.CurrentPage:
+			default:
+				paginaInicio = this.PaginaActual;
+				paginaFin = this.PaginaActual;
+				break;
+		}
+	}
+
+	private void DibujarEtiquetaEnPrintDocument(EtiquetaPrinter printer, Graphics g, float anchoEtiqueta)
+	{
+		// Acceso a campos privados del EtiquetaPrinter usando reflexión
+		var tipo = typeof(EtiquetaPrinter);
+		var cliente = tipo.GetField("_cliente", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(printer) as string ?? "";
+		var producto = tipo.GetField("_producto", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(printer) as string ?? "";
+		var codigoCompra = tipo.GetField("_codigoCompra", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(printer) as string ?? "";
+		var cantidad = tipo.GetField("_cantidad", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(printer) as string ?? "";
+		var direccion = tipo.GetField("_direccion", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(printer) as string ?? "";
+
+		// Replicar exactamente la lógica del método Imprimir() original
+		float paddingSuperior = 3 * 3.937f; // mm(3)
+		float espacioEntreBloques = 6 * 3.937f; // mm(6)
+		float espacioEntreLineasProducto = 5 * 3.937f; // mm(5)
+		float paddingLateral = 3 * 3.937f; // mm(3)
+
+		using (Font fuente = new Font("Arial", 11))
+		{
+			float y = paddingSuperior;
+
+			// Cliente
+			DibujarTextoEnImpresion(g, cliente, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			// Producto (puede tener múltiples líneas)
+			var lineasProducto = PartirEnLineasForzado(producto, 25);
+			foreach (var linea in lineasProducto)
+			{
+				DibujarTextoEnImpresion(g, linea, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+				y += espacioEntreLineasProducto;
+			}
+			y -= espacioEntreLineasProducto; // corregir el último salto
+			y += espacioEntreBloques;
+
+			// Código de compra
+			DibujarTextoEnImpresion(g, codigoCompra, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			// Cantidad
+			DibujarTextoEnImpresion(g, cantidad, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+			y += espacioEntreBloques;
+
+			// Dirección
+			DibujarTextoEnImpresion(g, direccion, fuente, y, "centro", anchoEtiqueta, paddingLateral);
+		}
+	}
+
+	private void DibujarTextoEnImpresion(Graphics g, string texto, Font fuente, float posY, string alineacion, float anchoEtiqueta, float paddingLateral)
+	{
+		if (string.IsNullOrEmpty(texto)) return;
+
+		SizeF size = g.MeasureString(texto, fuente);
+		float x;
+
+		switch (alineacion)
+		{
+			case "centro":
+				x = (anchoEtiqueta - size.Width) / 2 - paddingLateral;
+				break;
+			case "izquierda":
+				x = paddingLateral;
+				break;
+			default:
+				x = paddingLateral;
+				break;
+		}
+
+		g.DrawString(texto, fuente, Brushes.Black, new PointF(x, posY));
+	}
+
+	private List<string> PartirEnLineasForzado(string texto, int corte = 25)
+	{
+		var lineas = new List<string>();
+
+		if (string.IsNullOrEmpty(texto) || texto.Length <= corte)
+		{
+			lineas.Add(texto ?? "");
+		}
+		else
+		{
+			string primeraParte = texto.Substring(0, corte);
+			string segundaParte = texto.Substring(corte);
+
+			if (!char.IsWhiteSpace(texto[corte]) && !char.IsWhiteSpace(texto[corte - 1]))
+			{
+				primeraParte = primeraParte.TrimEnd() + "-";
+			}
+
+			lineas.Add(primeraParte.Trim());
+			lineas.Add(segundaParte.Trim());
+		}
+
+		return lineas;
+	}
+	#endregion
+
+}
+
+
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
+using DAL.Entidades;
+
+namespace Control_de_Ventas_Online.Forms
+{
+	public partial class VistaPreviaEtiquetaForm : Form
+	{
+		private List<Bitmap> _etiquetasBitmaps;
+		private List<EtiquetaProducto> _etiquetasData;
+
+		public VistaPreviaEtiquetaForm(List<Bitmap> etiquetasBitmaps, List<EtiquetaProducto> etiquetasData)
+		{
+			InitializeComponent();
+			_etiquetasBitmaps = etiquetasBitmaps;
+			_etiquetasData = etiquetasData;
+			ConfigurarPaginacion();
+			MostrarEtiquetaActual();
+		}
+
+		public VistaPreviaEtiquetaForm(Bitmap etiquetaBitmap)
+		{
+			InitializeComponent();
+			_etiquetasBitmaps = new List<Bitmap> { etiquetaBitmap };
+			_etiquetasData = null;
+			ConfigurarPaginacion();
+			MostrarEtiquetaActual();
+		}
+
+		private void ConfigurarPaginacion()
+		{
+			_paginacion.TotalPaginas = _etiquetasBitmaps.Count;
+			_paginacion.PaginaActual = 1;
+			_paginacion.PaginaCambiada += (s, pagina) => MostrarEtiquetaActual();
+
+			// Solo pasar los datos al navegador para impresión
+			_paginacion.DatosParaImpresion = _etiquetasData;
+
+			// Ya no necesitas el evento ImprimirDocumento
+		}
+
+		private void MostrarEtiquetaActual()
+		{
+			if (_etiquetasBitmaps?.Count > 0)
+			{
+				int indice = _paginacion.PaginaActual - 1;
+				if (indice >= 0 && indice < _etiquetasBitmaps.Count)
+				{
+					pictureBox1.Image = _etiquetasBitmaps[indice];
+					pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+					this.Text = $"Vista Previa de Etiquetas - {_paginacion.PaginaActual} de {_paginacion.TotalPaginas}";
+				}
+			}
+		}
+
+		// Ya no necesitas este método
+		// private void ImprimirEtiquetaActual() { ... } ← ELIMINAR
+
+		protected override void OnResize(EventArgs e)
+		{
+			base.OnResize(e);
+			if (pictureBox1 != null && _paginacion != null)
+			{
+				pictureBox1.Top = _paginacion.Bottom + 5;
+				pictureBox1.Height = this.ClientSize.Height - pictureBox1.Top - 10;
+			}
+		}
+	}
+}
+namespace Control_de_Ventas_Online.Forms
+{
+	partial class VistaPreviaEtiquetaForm
+	{
+		/// <summary>
+		/// Variable del diseñador necesaria.
+		/// </summary>
+		private System.ComponentModel.IContainer components = null;
+
+		/// <summary>
+		/// Limpiar los recursos que se estén usando.
+		/// </summary>
+		/// <param name="disposing">true si los recursos administrados se deben desechar; false en caso contrario.</param>
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing && (components != null))
+			{
+				components.Dispose();
+			}
+			base.Dispose(disposing);
+		}
+
+		#region Código generado por el Diseñador de Windows Forms
+
+		/// <summary>
+		/// Método necesario para admitir el Diseñador. No se puede modificar
+		/// el contenido de este método con el editor de código.
+		/// </summary>
+		private void InitializeComponent()
+		{
+			this.panel2 = new System.Windows.Forms.Panel();
+			this.pictureBox1 = new System.Windows.Forms.PictureBox();
+			this.panel1 = new System.Windows.Forms.Panel();
+			this.tableLayoutPanel1 = new System.Windows.Forms.TableLayoutPanel();
+			this._paginacion = new PaginationControl();
+			this.panel2.SuspendLayout();
+			((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
+			this.panel1.SuspendLayout();
+			this.tableLayoutPanel1.SuspendLayout();
+			this.SuspendLayout();
+			// 
+			// panel2
+			// 
+			this.panel2.Controls.Add(this.pictureBox1);
+			this.panel2.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.panel2.Location = new System.Drawing.Point(0, 60);
+			this.panel2.Name = "panel2";
+			this.panel2.Size = new System.Drawing.Size(1129, 589);
+			this.panel2.TabIndex = 1;
+			// 
+			// pictureBox1
+			// 
+			this.pictureBox1.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.pictureBox1.Location = new System.Drawing.Point(0, 0);
+			this.pictureBox1.Name = "pictureBox1";
+			this.pictureBox1.Size = new System.Drawing.Size(1129, 589);
+			this.pictureBox1.TabIndex = 0;
+			this.pictureBox1.TabStop = false;
+			// 
+			// panel1
+			// 
+			this.panel1.Controls.Add(this.tableLayoutPanel1);
+			this.panel1.Dock = System.Windows.Forms.DockStyle.Top;
+			this.panel1.Location = new System.Drawing.Point(0, 0);
+			this.panel1.Name = "panel1";
+			this.panel1.Size = new System.Drawing.Size(1129, 60);
+			this.panel1.TabIndex = 0;
+			// 
+			// tableLayoutPanel1
+			// 
+			this.tableLayoutPanel1.ColumnCount = 2;
+			this.tableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 40.65545F));
+			this.tableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 59.34455F));
+			this.tableLayoutPanel1.Controls.Add(this._paginacion, 0, 0);
+			this.tableLayoutPanel1.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.tableLayoutPanel1.Location = new System.Drawing.Point(0, 0);
+			this.tableLayoutPanel1.Name = "tableLayoutPanel1";
+			this.tableLayoutPanel1.RowCount = 1;
+			this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+			this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+			this.tableLayoutPanel1.Size = new System.Drawing.Size(1129, 60);
+			this.tableLayoutPanel1.TabIndex = 0;
+			// 
+			// _paginacion
+			// 
+			this._paginacion.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+			this._paginacion.Dock = System.Windows.Forms.DockStyle.Fill;
+			this._paginacion.Location = new System.Drawing.Point(4, 5);
+			this._paginacion.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+			this._paginacion.MaximumSize = new System.Drawing.Size(2999, 48);
+			this._paginacion.MinimumSize = new System.Drawing.Size(374, 48);
+			this._paginacion.Name = "_paginacion";
+			this._paginacion.Size = new System.Drawing.Size(451, 48);
+			this._paginacion.TabIndex = 0;
+			// 
+			// VistaPreviaEtiquetaForm
+			// 
+			this.ClientSize = new System.Drawing.Size(1129, 649);
+			this.Controls.Add(this.panel2);
+			this.Controls.Add(this.panel1);
+			this.Name = "VistaPreviaEtiquetaForm";
+			this.panel2.ResumeLayout(false);
+			((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
+			this.panel1.ResumeLayout(false);
+			this.tableLayoutPanel1.ResumeLayout(false);
+			this.ResumeLayout(false);
+
+		}
+
+		#endregion
+		private System.Windows.Forms.Panel panel2;
+		private System.Windows.Forms.PictureBox pictureBox1;
+		private System.Windows.Forms.Panel panel1;
+		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;
+		private PaginationControl _paginacion;
+	}
+}
